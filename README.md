@@ -1,4 +1,4 @@
-These files contain scripts i wrote for scientific publications.
+These files contain scripts i wrote for scientific publications. These scripts are written for people without any bioinformatics knowledge who are interested in the results and might be interested in the packages i used. 
 
 
 RNAseq_IKZFAraC.rmd: 
