@@ -1,0 +1,260 @@
+---
+title: "RNA seq analysis for AraC dataset"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3 
+    number_sections: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    theme: cosmo
+author: "Kari Grunewald"
+date: "`r Sys.Date()`"
+---
+
+```{r setup 1, include=FALSE,}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "~/documents/Bioinformatics/IKZF1_ARaC/RNAsequencing/final_analysis")
+```
+
+# Introduction
+
+In this file we will discuss the analysis of the RNAsequencing data derived from the IKZF1 wildtype/Knockout SEM cell models. We will use the differentially expressed genes provided by Novogene to performa an Overrepresentation analysis (ORA).ORA is a non-topology based analysis and mostly ued for smaller RNAseq genesets. this is different than a GSEA analysis. for the exact difference i recommend reading: <https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1002375> In short, ORA uses preselected data from DEseq analysis and GSEA uses the expression data from a whole RNAseq analysis.so for GSEA analysis larger data sets are needed.
+
+for this function you need the Complexheatmap package <https://jokergoo.github.io/ComplexHeatmap-reference/book/index.html>
+
+```{r "loading required packages and set wd", message=FALSE}
+library(ComplexHeatmap)
+library(writexl)
+library(dplyr)
+library(readxl)
+library(clusterProfiler)
+library(stringr)
+library(ggplot2)
+library(VennDiagram)
+
+
+## this will also be your output file
+
+```
+
+# Setting up the data
+
+For the ORA we will use a combined list of differentially expressed genes from different combinations and transfrom the corresponding FPKM values to zscores for visualization. The differentially expressed gene lists are provided bij novogene and a cutoff of p adjusted value (or FDR) of 0.05 was used
+
+## Loading all the files
+
+```{r preparing data}
+
+#combining the lists
+ExprDF <- as.data.frame(read_xlsx("gene_fpkm_edit.xlsx"))
+dwt<- read.delim("WT_AraCvsWT_CTRL_deg_all.xls")
+dko<- read.delim("HomoKO_AraCvsHomoKO_CTRL_deg_all.xls")
+uwtko <- as.data.frame(read_xlsx("HomoKO_CTRLvsWT_CTRL_deg_all.xlsx"))
+wtvsko <- read.delim("HomoKo_AraCvsWt_AraC_deg_all.xls")
+complete <- c(dwt$gene_name,dko$gene_name,uwtko$gene_name,wtvsko$gene_name)
+complete <- as.data.frame(complete )
+complete$LFC <- c(dwt$log2FoldChange, dko$log2FoldChange, uwtko$log2FoldChange, wtvsko$log2FoldChange)
+complete$padj <- c(dwt$padj, dko$padj, uwtko$padj, wtvsko$padj)
+complete <- complete[!duplicated(complete$complete),]
+venn <- venn.diagram(x = list (dwt$gene_name,dko$gene_name,uwtko$gene_name,wtvsko$gene_name), 
+             category.names = c("IKZF1 wt treated vs untreated", "IKZF1 -/- treated vs untreated",
+                                "untreated IKZF1wt vs IKZF1ko", "treated IKZF1wt vs IKZF1ko"),
+                       filename = "inputORAvenn.png", 
+                       output = TRUE,
+              lwd = 2,
+        lty = 'blank',
+        fill = c("#999999", "#E69F00", "#56B4E9", "#009E73"),
+        width = 4000,
+        # Numbers
+        cex = .9,
+        fontface = "italic",
+        # Set names
+        cat.cex = 1,
+        cat.fontface = "bold",
+        cat.default.pos = "outer",
+        cat.dist = c(0.055, 0.055, 0.1, 0.1),
+        main = "Input for ORA")
+
+```
+
+## Calculating the Zscore
+YES i know now that there is just one function for this but somehow this eluded me when i wrote the script (edit 30-1-2025)
+```{r, calculating zscores}
+## calculating the Zscores 
+## remove all duplicate genes from the list
+ExprDF <- ExprDF[!duplicated(ExprDF$gene_name),]
+
+## extracting the FPKM values and selecting the deseq genes 
+Exprmat <- as.matrix(ExprDF[2:13])
+rownames(Exprmat) <- ExprDF$gene_name
+Exprmat <- Exprmat[ rownames(Exprmat) %in% complete$complete,]
+
+## creating some variables for the zscore analysis
+conditions <- colnames(Exprmat)[1:12]
+
+groups <- unique(str_sub(conditions, end = -2))
+
+list <- c(1:nrow(Exprmat))
+i = 1
+## creating df were we will store the zscores
+zscores <- c() 
+zscores <- data.frame(row.names = rownames(ExprDF$gene_name))
+zscoresmean <- data.frame(row.names = rownames(Exprmat))
+#Exprmat <- as.numeric(Exprmat)
+
+
+
+for (s in list ) {
+  mean <- mean(as.numeric(Exprmat[s,]))
+  stdev <- sd(Exprmat[s,])
+  
+  for (a in conditions) { 
+    
+    zscores[s,a]<- (Exprmat[s, a]-mean)/stdev
+      
+    
+    
+  }}
+
+for (b in groups) {
+  
+  df <-  select(zscores, contains(b))
+  zscoresmean[s,b]<-  mean(as.numeric(df[s,]))
+  
+  
+}
+
+
+rownames(zscores) <- rownames(Exprmat)
+```
+
+## Visualization of the differential expressed genes
+
+```{r visualize all the deseq expression levels, fig.height=7, fig.width=5}
+d <- Heatmap(zscores[rownames(zscores) %in% complete$complete,], show_row_names = F, show_row_dend = F)
+
+pdf("heatmap_difseqgenes.pdf", height = 10)
+print(d)
+dev.off()
+
+print(d)
+
+```
+
+# ORA function
+
+the function from this function you will get an overview of over represented pathways in the form of a dotplot. Additionally heatmaps will be made of the top 5 over represented pathways. all this will be saved in your WD. As input we use a df of the gene names, adjusted P value and Log fold change it is important that all genes included are already filtered on pvalue. The results will also be generated as output in the working directory file. In this function we use multiple testing correction Benjamini & Hochberg, which is also known as FDR
+
+```{r the ORA function}
+
+Enrich_geneset<- function(datainput){
+  
+ordered <- datainput[order(datainput$padj),]
+names(ordered)<- c("gene_symbol", "LFC", "padj") 
+
+t <-ordered$gene_symbol
+et <- bitr(t, fromType="SYMBOL", toType=(c("ENTREZID","ENSEMBL")), OrgDb="org.Hs.eg.db")
+
+names(et) <- c("gene_symbol", "entrez_id", "ensemble")
+
+sigGenes<- et$entrez_id
+sigGenes <- na.exclude(sigGenes)
+
+test <- enrichKEGG(gene = sigGenes, organism = 'hsa')
+ pdf("dotplot_pathwayoverrep.pdf")
+print(dotplot(test)) 
+dev.off()
+
+pathways <- test@result$Description[1:5]
+
+print("the top 5 pathways")
+print(test@result$Description[1:5])
+for (a in seq(1:5)) {
+  pathway <- str_split(test@result$geneID[a], pattern =  "/")
+  symbol<-  bitr(unlist(pathway), fromType="ENTREZID", toType=(c("SYMBOL","ENSEMBL")), OrgDb="org.Hs.eg.db")
+set.seed(123)
+p <- Heatmap(as.matrix(zscores[rownames(zscores) %in% symbol$SYMBOL,]))
+
+pdf(paste0("overrep_analysis", test@result$Description[a], "heatmap.pdf"), height = 10)
+print(p)
+dev.off()
+
+print(p)
+}
+
+
+
+
+}
+
+
+
+```
+
+## Run the function
+
+```{r run the ORA function on our genes, fig.height=10, fig.width=5}
+## heatmap with all the deseq genes
+Enrich_geneset(complete)
+
+```
+
+# Additional genes of interest
+
+Besides the ORA we are also interested in various different genes involved in the metabolism of AraC and also known to influence the therapy response.
+
+```{r additional genes of interest}
+## heatmap with genes of interest##
+GOis <- c("TOP2A", "TOP1", "DCK", "SLC29A1", "POLA1", "NT5E" , "ABCB1", "CDA", "NT5C2")
+seq <- c(1, 2, 3, 7, 8, 9)
+
+aracgoi <- ExprDF[ExprDF$gene_name %in% GOis,2:13]
+rownames(aracgoi) <- ExprDF$gene_name[ExprDF$gene_name %in% GOis]
+## the matrix with the genes of interest was ran through the 
+## the code for Zscore transformation (line 62)
+
+
+## creating some variables for the zscore analysis
+conditions <- colnames(aracgoi)[1:12]
+
+groups <- unique(str_sub(conditions, end = -2))
+
+list <- c(1:nrow(aracgoi))
+i = 1
+## creating df were we will store the zscores
+zscores <- c() 
+zscores <- data.frame(row.names = rownames(aracgoi$gene_name))
+
+#Exprmat <- as.numeric(Exprmat)
+
+for (s in list ) {
+  mean <- mean(as.numeric(aracgoi[s,]))
+  stdev <- sd(aracgoi[s,])
+  
+  for (a in conditions) { 
+    
+    zscores[s,a]<- (aracgoi[s, a]-mean)/stdev
+      
+    
+    
+  }}
+
+
+rownames(zscores) <- rownames(aracgoi)
+
+zscores[9,] <- 0
+seq <- c(1, 2, 3, 7, 8, 9)
+
+t <- Heatmap(as.matrix(zscores[,seq]), 
+             show_row_dend = F, 
+             show_column_dend = F, 
+             row_names_side = "left", 
+             row_order = c(1:9), 
+             column_order = 1:6)
+pdf("heatmap_aracgois.pdf", height =10)
+print(t)
+  dev.off()
+print(t)
+```
