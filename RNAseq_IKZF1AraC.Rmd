@@ -20,9 +20,12 @@ knitr::opts_knit$set(root.dir = "~/documents/Bioinformatics/IKZF1_ARaC/RNAsequen
 
 # Introduction
 
+
 In this file we will discuss the analysis of the RNAsequencing data derived from the IKZF1 wildtype/Knockout SEM cell models. We will use the differentially expressed genes provided by Novogene to performa an Overrepresentation analysis (ORA).ORA is a non-topology based analysis and mostly ued for smaller RNAseq genesets. this is different than a GSEA analysis. for the exact difference i recommend reading: <https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1002375> In short, ORA uses preselected data from DEseq analysis and GSEA uses the expression data from a whole RNAseq analysis.so for GSEA analysis larger data sets are needed.
 
 for this function you need the Complexheatmap package <https://jokergoo.github.io/ComplexHeatmap-reference/book/index.html>
+
+*some results of this script are published here https://doi.org/10.3324/haematol.2023.284357*
 
 ```{r "loading required packages and set wd", message=FALSE}
 library(ComplexHeatmap)
